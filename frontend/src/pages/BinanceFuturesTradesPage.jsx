@@ -51,6 +51,13 @@ const secondaryButtonStyle = {
   cursor: "pointer",
 };
 
+const statusStyle = {
+  queued: { color: "#8a6d3b" },
+  processing: { color: "#1565c0" },
+  completed: { color: "#2e7d32" },
+  failed: { color: "#c62828" },
+};
+
 export default function BinanceFuturesTradesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -65,9 +72,11 @@ export default function BinanceFuturesTradesPage() {
   const [dateTo, setDateTo] = useState("");
   const [limit, setLimit] = useState(200);
 
+  const [archiveSub, setArchiveSub] = useState("");
   const [archiveStart, setArchiveStart] = useState("");
   const [archiveEnd, setArchiveEnd] = useState("");
 
+  const [incSub, setIncSub] = useState("");
   const [incSymbol, setIncSymbol] = useState("");
   const [incStart, setIncStart] = useState("");
   const [incEnd, setIncEnd] = useState("");
@@ -92,6 +101,9 @@ export default function BinanceFuturesTradesPage() {
       setSubaccounts(subs);
       setJobs(syncJobs);
       setTrades(tradeRows);
+
+      if (!archiveSub && subs.length > 0) setArchiveSub(subs[0].email);
+      if (!incSub && subs.length > 0) setIncSub(subs[0].email);
     } catch (e) {
       setError(e.message || "Ошибка загрузки");
     } finally {
@@ -106,7 +118,6 @@ export default function BinanceFuturesTradesPage() {
   async function handleSyncSubaccounts() {
     setLoading(true);
     setError("");
-
     try {
       await syncSubaccounts();
       await loadAll();
@@ -118,7 +129,7 @@ export default function BinanceFuturesTradesPage() {
   }
 
   async function handleArchiveBackfill() {
-    if (!selectedSub || !archiveStart || !archiveEnd) {
+    if (!archiveSub || !archiveStart || !archiveEnd) {
       setError("Выбери субсчет и период архива");
       return;
     }
@@ -128,7 +139,7 @@ export default function BinanceFuturesTradesPage() {
 
     try {
       await runArchiveBackfill({
-        subaccount_email: selectedSub,
+        subaccount_email: archiveSub,
         period_start: toIsoLocal(archiveStart),
         period_end: toIsoLocal(archiveEnd, true),
       });
@@ -141,7 +152,7 @@ export default function BinanceFuturesTradesPage() {
   }
 
   async function handleIncrementalSync() {
-    if (!selectedSub || !incSymbol || !incStart || !incEnd) {
+    if (!incSub || !incSymbol || !incStart || !incEnd) {
       setError("Заполни субсчет, symbol и период incremental sync");
       return;
     }
@@ -151,7 +162,7 @@ export default function BinanceFuturesTradesPage() {
 
     try {
       await runIncrementalSync({
-        subaccount_email: selectedSub,
+        subaccount_email: incSub,
         symbol: incSymbol.toUpperCase(),
         period_start: toIsoLocal(incStart),
         period_end: toIsoLocal(incEnd, true),
@@ -215,7 +226,7 @@ export default function BinanceFuturesTradesPage() {
         <div>
           <h1 style={{ margin: 0 }}>Binance Futures Trades</h1>
           <p style={{ marginTop: "6px", color: "#666" }}>
-            История сделок по субсчетам, archive backfill и incremental sync
+            История сделок по субсчетам, archive backfill, incremental sync и экспорт
           </p>
         </div>
 
@@ -223,11 +234,9 @@ export default function BinanceFuturesTradesPage() {
           <button onClick={handleSyncSubaccounts} style={buttonStyle} disabled={loading}>
             Синхронизировать субсчета
           </button>
-
           <button onClick={loadAll} style={secondaryButtonStyle} disabled={loading}>
             Обновить
           </button>
-
           <button onClick={handleExportExcel} style={secondaryButtonStyle} disabled={loading}>
             Экспорт в Excel
           </button>
@@ -260,17 +269,14 @@ export default function BinanceFuturesTradesPage() {
           <div style={{ color: "#666" }}>Субсчетов</div>
           <div style={{ fontSize: "28px", marginTop: "10px" }}>{subaccounts.length}</div>
         </div>
-
         <div style={boxStyle}>
           <div style={{ color: "#666" }}>Сделок в выборке</div>
           <div style={{ fontSize: "28px", marginTop: "10px" }}>{stats.count}</div>
         </div>
-
         <div style={boxStyle}>
           <div style={{ color: "#666" }}>Realized PnL</div>
           <div style={{ fontSize: "28px", marginTop: "10px" }}>{stats.pnl.toFixed(4)}</div>
         </div>
-
         <div style={boxStyle}>
           <div style={{ color: "#666" }}>Commission</div>
           <div style={{ fontSize: "28px", marginTop: "10px" }}>{stats.commission.toFixed(4)}</div>
@@ -279,7 +285,6 @@ export default function BinanceFuturesTradesPage() {
 
       <div style={{ ...boxStyle, marginBottom: "20px" }}>
         <h2>Фильтры сделок</h2>
-
         <div
           style={{
             display: "grid",
@@ -325,6 +330,15 @@ export default function BinanceFuturesTradesPage() {
         <div style={boxStyle}>
           <h2>Archive backfill</h2>
           <div style={{ display: "grid", gap: "12px" }}>
+            <select value={archiveSub} onChange={(e) => setArchiveSub(e.target.value)} style={inputStyle}>
+              <option value="">Выбери субсчет</option>
+              {subaccounts.map((sub) => (
+                <option key={sub.id} value={sub.email}>
+                  {sub.email}
+                </option>
+              ))}
+            </select>
+
             <input type="date" value={archiveStart} onChange={(e) => setArchiveStart(e.target.value)} style={inputStyle} />
             <input type="date" value={archiveEnd} onChange={(e) => setArchiveEnd(e.target.value)} style={inputStyle} />
 
@@ -337,12 +351,22 @@ export default function BinanceFuturesTradesPage() {
         <div style={boxStyle}>
           <h2>Incremental sync</h2>
           <div style={{ display: "grid", gap: "12px" }}>
+            <select value={incSub} onChange={(e) => setIncSub(e.target.value)} style={inputStyle}>
+              <option value="">Выбери субсчет</option>
+              {subaccounts.map((sub) => (
+                <option key={sub.id} value={sub.email}>
+                  {sub.email}
+                </option>
+              ))}
+            </select>
+
             <input
               value={incSymbol}
               onChange={(e) => setIncSymbol(e.target.value.toUpperCase())}
               placeholder="BTCUSDT"
               style={inputStyle}
             />
+
             <input type="date" value={incStart} onChange={(e) => setIncStart(e.target.value)} style={inputStyle} />
             <input type="date" value={incEnd} onChange={(e) => setIncEnd(e.target.value)} style={inputStyle} />
 
@@ -367,13 +391,21 @@ export default function BinanceFuturesTradesPage() {
                 <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>Error</th>
               </tr>
             </thead>
-
             <tbody>
               {jobs.map((job) => (
                 <tr key={job.id}>
                   <td style={{ padding: "10px", borderBottom: "1px solid #eee" }}>{job.id}</td>
                   <td style={{ padding: "10px", borderBottom: "1px solid #eee" }}>{job.job_type}</td>
-                  <td style={{ padding: "10px", borderBottom: "1px solid #eee" }}>{job.status}</td>
+                  <td
+                    style={{
+                      padding: "10px",
+                      borderBottom: "1px solid #eee",
+                      fontWeight: 700,
+                      ...(statusStyle[job.status] || {}),
+                    }}
+                  >
+                    {job.status}
+                  </td>
                   <td style={{ padding: "10px", borderBottom: "1px solid #eee" }}>
                     {fmtDate(job.period_start)}
                     <br />
@@ -410,7 +442,6 @@ export default function BinanceFuturesTradesPage() {
                 <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>Source</th>
               </tr>
             </thead>
-
             <tbody>
               {trades.map((trade) => (
                 <tr key={`${trade.subaccount_email}-${trade.symbol}-${trade.trade_id}`}>

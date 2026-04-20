@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,9 +21,6 @@ from app.integrations.binance.service import (
 )
 from app.models.binance import BinanceSubAccount, BinanceSyncJob, FuturesTrade
 from app.schemas.binance import ArchiveBackfillRequest, IncrementalSyncRequest
-from io import BytesIO
-from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
 
 router = APIRouter(prefix="/api/binance", tags=["binance-trades"])
 
@@ -77,7 +77,9 @@ def archive_backfill_endpoint(
     db: Session = Depends(get_db),
     factory: BinanceClientFactory = Depends(get_client_factory),
 ):
-    sub = db.scalar(select(BinanceSubAccount).where(BinanceSubAccount.email == payload.subaccount_email))
+    sub = db.scalar(
+        select(BinanceSubAccount).where(BinanceSubAccount.email == payload.subaccount_email)
+    )
     if not sub:
         raise HTTPException(status_code=404, detail="Subaccount not found")
 
@@ -99,7 +101,9 @@ def incremental_sync_endpoint(
     db: Session = Depends(get_db),
     factory: BinanceClientFactory = Depends(get_client_factory),
 ):
-    sub = db.scalar(select(BinanceSubAccount).where(BinanceSubAccount.email == payload.subaccount_email))
+    sub = db.scalar(
+        select(BinanceSubAccount).where(BinanceSubAccount.email == payload.subaccount_email)
+    )
     if not sub:
         raise HTTPException(status_code=404, detail="Subaccount not found")
 
@@ -119,7 +123,7 @@ def incremental_sync_endpoint(
 @router.get("/sync-jobs")
 def list_sync_jobs(db: Session = Depends(get_db)):
     rows = db.scalars(
-        select(BinanceSyncJob).order_by(BinanceSyncJob.created_at.desc()).limit(50)
+        select(BinanceSyncJob).order_by(BinanceSyncJob.created_at.desc()).limit(100)
     ).all()
 
     return [
@@ -134,6 +138,8 @@ def list_sync_jobs(db: Session = Depends(get_db)):
             "download_id": x.download_id,
             "download_url": x.download_url,
             "error_text": x.error_text,
+            "started_at": x.started_at,
+            "finished_at": x.finished_at,
         }
         for x in rows
     ]
@@ -146,7 +152,7 @@ def list_trades(
     symbol: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
-    limit: int = Query(default=100, le=1000),
+    limit: int = Query(default=100, le=5000),
 ):
     stmt = select(FuturesTrade, BinanceSubAccount).join(
         BinanceSubAccount,
@@ -186,6 +192,8 @@ def list_trades(
         }
         for trade, sub in rows
     ]
+
+
 @router.get("/trades/export")
 def export_trades_to_excel(
     db: Session = Depends(get_db),
@@ -272,5 +280,5 @@ def export_trades_to_excel(
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
     )
